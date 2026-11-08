@@ -412,8 +412,8 @@ def main() -> None:
     patch_version_code(root, code)
     patch_edge_slide(root)
     patch_slider_layout(root)
-    patch_driving_guard(root)
-    print(f"patched: GET_TASKS, Conscrypt, update_urls={url or '(empty: update check off)'}, versionCode={code}, edge-swipe back (+ relayout fix), driving guard")
+    # patch_driving_guard(root)  # disabled in this fork: no park-only lockout
+    print(f"patched: GET_TASKS, Conscrypt, update_urls={url or '(empty: update check off)'}, versionCode={code}, edge-swipe back (+ relayout fix), driving guard OFF")
 
 
 if __name__ == "__main__":
