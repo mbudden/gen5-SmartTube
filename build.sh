@@ -6,6 +6,7 @@
 #
 # Outputs in dist/:
 #   smarttube-<ver>-gen5w.<rev>.zip   NEMESIS package (depends on media.codecs)
+#   smarttube-<ver>-gen5w.<rev>-usb.zip  one-tap USB stick: media.codecs + SmartTube
 #   $APK_ASSET                        the patched, signed APK
 #   $MANIFEST_ASSET                   in-app update manifest (only if UPDATE_REPO is set)
 #   SHA256SUMS
@@ -45,6 +46,10 @@ die() { echo "build: $*" >&2; exit 1; }
 [ -x "$APKTOOL" ] || die "apktool not found (set APKTOOL)"
 [ -f "$KEYSTORE" ] || die "keystore not found: $KEYSTORE"
 [ "${KS_PASS#file:}" = "$KS_PASS" ] || [ -f "${KS_PASS#file:}" ] || die "no SMARTTUBE_KEY_PASS and no ${KS_PASS#file:}"
+
+# media.codecs for the one-tap USB stick ($CODECS_ZIP, or the pinned release).
+CODECS_ZIP=${CODECS_ZIP:-$("$HERE/tools/fetch-codecs.sh")} || die "couldn't get media.codecs"
+[ -f "$CODECS_ZIP" ] || die "no such media.codecs zip: $CODECS_ZIP"
 
 # Upstream identity
 badging=$("$BT/aapt" dump badging "$SRC_APK")
@@ -107,21 +112,49 @@ EOF
 
 # The package zip is for `nemesis install`. The USB handler only reads a
 # `type=` descriptor at the drive root, so extracting the package itself onto
-# a drive gives "Invalid package descriptor". The -usb zip wraps it in the
-# layout of NEMESIS's own release zips: extract it onto the drive root.
+# a drive gives "Invalid package descriptor". The -usb zip is a one-tap stick:
+# a type=execute descriptor whose script (usb/install.sh) installs media.codecs
+# if needed, then SmartTube, after a single prompt. Extract it onto the drive root.
 rm -rf "$DIST" && mkdir -p "$DIST"
 zipname=smarttube-$label.zip
-python3 -I - "$stage" "$DIST/$zipname" "$DIST/smarttube-$label-usb.zip" <<'EOF'
-import sys, zipfile
+python3 -I - "$stage" "$DIST/$zipname" "$DIST/smarttube-$label-usb.zip" "$CODECS_ZIP" "$HERE/usb/install.sh" "$CODECS_MIN_VERSION" <<'EOF'
+import configparser, io, sys, zipfile
 from pathlib import Path
-src, out, usb = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+src, out, usb, codecs, script, codecs_min = sys.argv[1:7]
+src = Path(src)
+
+# The bundled codec package must be media.codecs and satisfy our depends=.
+with zipfile.ZipFile(codecs) as z:
+    names = [n for n in z.namelist() if n == "NEMESIS.data" or n.endswith("/NEMESIS.data")]
+    assert names, "media.codecs zip has no NEMESIS.data"
+    ini = configparser.ConfigParser(interpolation=None, strict=False)
+    ini.read_string(z.read(min(names, key=len)).decode())
+    n = ini["nemesis"]
+    assert n.get("id") == "media.codecs", f"bundled codecs zip is {n.get('id')!r}"
+    ver = n.get("package-version", "0")
+    num = lambda v: [int(x) for x in v.split(".")]
+    assert num(ver) >= num(codecs_min), f"bundled media.codecs {ver} < {codecs_min}"
+
+body = open(script).read()
+assert "@CODECS_MIN_VERSION@" in body
+body = body.replace("@CODECS_MIN_VERSION@", codecs_min)
+
+def add(z, name, data, mode=0o644):
+    info = zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = mode << 16
+    z.writestr(info, data)
+
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for p in sorted(src.rglob("*")):
         if p.is_file() and not p.name.startswith((".", "._")):
             z.write(p, p.relative_to(src).as_posix())
 with zipfile.ZipFile(usb, "w", zipfile.ZIP_DEFLATED) as z:
-    z.writestr("NEMESIS.data", "[nemesis]\nversion=1.0\ntype=install\npath=packages/smarttube.zip\n")
-    z.write(out, "packages/smarttube.zip")
+    add(z, "NEMESIS.data", "[nemesis]\nversion=1.0\ntype=execute\npath=install.sh\n")
+    add(z, "install.sh", body, 0o755)
+    add(z, "packages/media.codecs.zip", open(codecs, "rb").read())
+    add(z, "packages/smarttube.zip", open(out, "rb").read())
+print(f"usb stick: media.codecs {ver} + smarttube")
 EOF
 cp "$work/SmartTube.apk" "$DIST/$APK_ASSET"
 
