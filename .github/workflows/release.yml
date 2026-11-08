@@ -128,5 +128,13 @@ jobs:
           tag=${GITHUB_REF_NAME}
           ver=${tag#v}; ver=${ver%-gen5w.*}; rev=${tag##*-gen5w.}
           mv dist/release-body.md body.md
-          gh release create "$tag" -R "$GITHUB_REPOSITORY" --verify-tag --latest \
-            --title "SmartTube $ver for Gen5W (build $rev)" --notes-file body.md dist/*
+          title="SmartTube $ver for Gen5W (build $rev)"
+          # A release published on github.com (Releases > Draft a new release, new
+          # tag) already exists when this runs: attach the build to it instead.
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$tag" -R "$GITHUB_REPOSITORY" --clobber dist/*
+            gh release edit "$tag" -R "$GITHUB_REPOSITORY" --latest --title "$title" --notes-file body.md
+          else
+            gh release create "$tag" -R "$GITHUB_REPOSITORY" --verify-tag --latest \
+              --title "$title" --notes-file body.md dist/*
+          fi
