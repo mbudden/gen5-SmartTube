@@ -9,6 +9,7 @@
 - **It runs on Gen5W.** Upstream's APK crashes on the splash screen and can't load anything on these units. This build fixes both.
 - **Swipe in from the left edge of the screen to go back,** including out of the video player. Gen5W has no Back button for apps like this one.
 - **It only uses Wi-Fi or a Bluetooth/USB hotspot, never the car's built-in modem.** The car's own connection isn't meant for streaming, and using it for that could get the car's connected services restricted. With no Wi-Fi or hotspot, SmartTube just can't connect. The rule is applied a few seconds after install and at every boot; its log is `/data/nemesis/logs/smarttube/netguard.log`.
+- **Laid out for the 1920×720 screen.** Upstream sizes its interface for a 16:9 TV, which comes out oversized and cropped here. This build fits a full row of videos on screen and defaults to the Dark Grey (OLED) color scheme.
 - **No park-only lockout.** Upstream gen5-SmartTube closes when the car leaves park; this fork leaves that patch out.
 
 ## Install

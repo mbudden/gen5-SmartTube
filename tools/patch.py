@@ -33,6 +33,14 @@ Patches (each fails loudly if SmartTube changed underneath it):
      for ACTION_ENTER_REGULATION and does the same when the car leaves park
      (popup only if SmartTube was in use). Adds the normal-level
      AUTOMOTIVE_REGULATION permission.
+  8. Layout fitted to a 1920x720 screen: MotherActivity.getDisplayMetrics sizes
+     the UI for a 16:9 TV (density 2.0 at 1920 wide), which leaves only 360dp
+     of height here. The base density drops so the height is the 540dp the TV
+     layouts expect. SmartTube's UI scale setting still multiplies this. The
+     forced 1.2x card scale on API 19 stays: upstream added it to stop
+     "chaotic cards positioning".
+  9. Default color scheme: Dark Grey (OLED) instead of Dark Grey. Only applies
+     until a scheme is saved.
 """
 import re
 import sys
@@ -377,6 +385,51 @@ DRIVING_GUARD = """.class public Lorg/gen5w/DrivingGuard;
 """
 
 
+# 720px / 540dp: the height SmartTube's TV layouts are designed for.
+UI_DENSITY = "0x3faaaaab    # 1.3333f"
+
+
+def _unique_smali(root: Path, name: str, cls: str) -> Path:
+    hits = [
+        f for d in sorted(root.glob("smali*"))
+        for f in d.rglob(name)
+        if f.read_text(encoding="utf-8").startswith(f".class public L{cls};")
+    ]
+    if len(hits) != 1:
+        raise SystemExit(f"{name}: expected 1, found {len(hits)} - SmartTube changed")
+    return hits[0]
+
+
+def patch_ui_density(root: Path) -> None:
+    p = _unique_smali(root, "MotherActivity.smali", "com/liskovsoft/smartyoutubetv2/common/misc/MotherActivity")
+    s = p.read_text(encoding="utf-8")
+    m = re.search(r"\.method private getDisplayMetrics\(.*?\.end method", s, re.S)
+    if not m:
+        raise SystemExit("getDisplayMetrics() not found - SmartTube changed, re-check the density patch")
+    body = m.group(0)
+    old = "const/high16 v1, 0x40000000    # 2.0f\n"
+    if body.count(old) != 1 or "->getUIScale()F" not in body:
+        raise SystemExit("getDisplayMetrics() no longer has the 2.0 base density - re-check the density patch")
+    s = s.replace(body, body.replace(old, f"const v1, {UI_DENSITY}\n"), 1)
+    p.write_text(s, encoding="utf-8")
+
+
+def patch_default_color_scheme(root: Path) -> None:
+    p = _unique_smali(root, "MainUIData.smali", "com/liskovsoft/smartyoutubetv2/common/prefs/MainUIData")
+    s = p.read_text(encoding="utf-8")
+    # parseInt(split, 3, 1): v2 already holds 3, the index of Dark Grey (OLED).
+    pat = re.compile(
+        r"(const/4 v2, 0x3\n\s*(?:\.line \d+\n\s*)?invoke-static \{v0, v2, )v1(\}, Lcom/liskovsoft/sharedutils/helpers/Helpers;->parseInt"
+        r"\(\[Ljava/lang/String;II\)I\n\s*move-result v3\n\s*iput v3, p0, Lcom/liskovsoft/smartyoutubetv2/common/prefs/MainUIData;->mColorSchemeIndex:I)")
+    s, n = pat.subn(r"\1v2\2", s)
+    if n != 1:
+        raise SystemExit(f"restoreState(): color scheme default matched {n} times - re-check the patch")
+    order = re.findall(r'const-string v4, "(App\.Theme\.[^"]*\.Browse)"', s)
+    if len(order) < 3 or order[2] != "App.Theme.DarkGrey.OLED.Browse":
+        raise SystemExit(f"color scheme order changed: {order}")
+    p.write_text(s, encoding="utf-8")
+
+
 def patch_driving_guard(root: Path) -> None:
     hits = [
         f for d in sorted(root.glob("smali*"))
@@ -413,7 +466,9 @@ def main() -> None:
     patch_edge_slide(root)
     patch_slider_layout(root)
     # patch_driving_guard(root)  # disabled in this fork: no park-only lockout
-    print(f"patched: GET_TASKS, Conscrypt, update_urls={url or '(empty: update check off)'}, versionCode={code}, edge-swipe back (+ relayout fix), driving guard OFF")
+    patch_ui_density(root)
+    patch_default_color_scheme(root)
+    print(f"patched: GET_TASKS, Conscrypt, update_urls={url or '(empty: update check off)'}, versionCode={code}, edge-swipe back (+ relayout fix), driving guard OFF, 1920x720 layout, OLED default")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ What's different from upstream SmartTube (details in the README):
 - Runs on Gen5W: upstream's APK crashes on the splash screen and can't load anything on these units.
 - Swipe in from the left edge of the screen to go back, including out of the video player.
 - Only uses Wi-Fi or a Bluetooth/USB hotspot, never the car's built-in modem.
+- Layout fitted to the 1920x720 screen, with Dark Grey (OLED) as the default color scheme.
 - Park-only lockout removed in this fork: it keeps playing when the car is out of park.
 
 Over ADB, install `media.codecs` @CODECS_MIN_VERSION@+ first, then `nemesis install --update @ZIP@`. Both ways keep an existing SmartTube's settings and sign-in. Check downloads against `SHA256SUMS`. If SmartTube was previously installed from another source with a different signing key, it gets reinstalled, which resets its settings and sign-in.
